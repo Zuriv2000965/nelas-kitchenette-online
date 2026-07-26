@@ -1,0 +1,149 @@
+{
+  "restaurantName": "Nela's Kitchenette",
+  "offers": [
+    "10% off your order with code SAVE10",
+    "Free garlic bread on orders over ₱1,200"
+  ],
+  "coupons": [
+    {
+      "code": "SAVE10",
+      "discountPercent": 10
+    }
+  ],
+  "categories": [
+    {
+      "name": "Appetizers",
+      "visible": true,
+      "items": [
+        {
+          "id": "spring-rolls",
+          "name": "Spring Rolls",
+          "description": "Crispy vegetable spring rolls with sweet chili sauce",
+          "price": 180,
+          "image": "",
+          "rating": 4.6,
+          "popular": false,
+          "visible": true
+        },
+        {
+          "id": "garlic-bread",
+          "name": "Garlic Bread",
+          "description": "Toasted baguette with garlic butter and herbs",
+          "price": 140,
+          "image": "",
+          "rating": 4.4,
+          "popular": false,
+          "visible": true
+        }
+      ]
+    },
+    {
+      "name": "Main Course",
+      "visible": true,
+      "items": [
+        {
+          "id": "classic-burger",
+          "name": "Classic Burger",
+          "description": "Beef patty, cheddar, lettuce, tomato, house sauce",
+          "price": 320,
+          "image": "",
+          "rating": 4.7,
+          "popular": true,
+          "visible": true
+        },
+        {
+          "id": "margherita-pizza",
+          "name": "Margherita Pizza",
+          "description": "Fresh mozzarella, basil, San Marzano tomato sauce",
+          "price": 420,
+          "image": "",
+          "rating": 4.9,
+          "popular": true,
+          "visible": true,
+          "options": {
+            "name": "Size",
+            "choices": [
+              {
+                "label": "Regular (10\")",
+                "priceDelta": 0
+              },
+              {
+                "label": "Large (14\")",
+                "priceDelta": 150
+              }
+            ]
+          }
+        },
+        {
+          "id": "grilled-salmon",
+          "name": "Grilled Salmon",
+          "description": "Served with roasted vegetables and lemon butter",
+          "price": 520,
+          "image": "",
+          "rating": 4.8,
+          "popular": false,
+          "visible": true
+        }
+      ]
+    },
+    {
+      "name": "Drinks",
+      "visible": true,
+      "items": [
+        {
+          "id": "iced-tea",
+          "name": "Iced Tea",
+          "description": "Freshly brewed, unsweetened or sweetened",
+          "price": 90,
+          "image": "",
+          "rating": 4.3,
+          "popular": false,
+          "visible": true,
+          "options": {
+            "name": "Size",
+            "choices": [
+              {
+                "label": "Small",
+                "priceDelta": 0
+              },
+              {
+                "label": "Medium",
+                "priceDelta": 20
+              },
+              {
+                "label": "Large",
+                "priceDelta": 40
+              }
+            ]
+          }
+        },
+        {
+          "id": "lemonade",
+          "name": "Lemonade",
+          "description": "Classic fresh-squeezed lemonade",
+          "price": 100,
+          "image": "",
+          "rating": 4.5,
+          "popular": false,
+          "visible": true
+        }
+      ]
+    },
+    {
+      "name": "Desserts",
+      "visible": true,
+      "items": [
+        {
+          "id": "chocolate-cake",
+          "name": "Chocolate Cake",
+          "description": "Rich layered chocolate cake with ganache",
+          "price": 195,
+          "image": "",
+          "rating": 4.9,
+          "popular": true,
+          "visible": true
+        }
+      ]
+    }
+  ]
+}
