@@ -30,13 +30,26 @@
   #loginBox input { width:100%; padding:12px; border-radius:10px; border:1px solid #E5E1DA; margin-bottom:10px; }
   #loginBox button { width:100%; padding:12px; border-radius:10px; border:none; background:#FF6B35; color:#fff;
                       font-weight:bold; cursor:pointer; }
+  .passwordWrap { position:relative; }
+  .passwordWrap input { padding-right:56px !important; }
+  .togglePw { position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none;
+              width:auto; padding:0; font-size:12px; font-weight:bold; color:#FF6B35; cursor:pointer; }
+  .itemRow { display:flex; align-items:center; gap:10px; padding:10px 0 10px 16px; border-top:1px solid #F5F2EC; }
+  .itemThumb { width:40px; height:40px; border-radius:8px; background:#F0EDE8; object-fit:cover; flex-shrink:0; }
+  .itemName { flex:1; font-size:14px; }
+  .smallBtn { padding:6px 10px; border-radius:8px; border:none; font-size:12px; font-weight:bold; cursor:pointer; }
+  .photoBtn { background:#F0EDE8; color:#3A342C; }
+  .deleteBtn { background:#FDEAE5; color:#E85A2A; }
 </style>
 </head>
 <body>
 
 <div id="loginBox">
   <h1>Admin Login</h1>
-  <input type="password" id="passwordInput" placeholder="Admin password">
+  <div class="passwordWrap">
+    <input type="password" id="passwordInput" placeholder="Admin password">
+    <button type="button" class="togglePw" id="togglePwButton" onclick="togglePasswordVisibility()">Show</button>
+  </div>
   <button onclick="login()">Log In</button>
   <p id="loginError" style="color:#E85A2A;font-size:13px;margin-top:8px;"></p>
 </div>
@@ -51,6 +64,8 @@
   <div id="menuTab"></div>
   <div id="ordersTab" style="display:none;"></div>
 </div>
+
+<input type="file" id="photoFileInput" accept="image/*" style="display:none;">
 
 <script src="admin.js"></script>
 </body>
