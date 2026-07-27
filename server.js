@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 
 const app = express();
 app.use(express.json());
@@ -8,6 +9,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const MENU_FILE = path.join(__dirname, 'data', 'menu.json');
 const ORDERS_FILE = path.join(__dirname, 'data', 'orders.json');
+const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+
+// Make sure the uploads folder exists (won't error if it already does).
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // Set this in your hosting provider's environment variables — never hardcode
 // the real password in code you might share or commit publicly.
@@ -28,6 +33,24 @@ function requireAdmin(req, res, next) {
   }
   next();
 }
+
+// ---------- Image upload configuration ----------
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const itemId = (req.body.itemId || 'item').replace(/[^a-zA-Z0-9-_]/g, '');
+    const ext = path.extname(file.originalname) || '.jpg';
+    cb(null, `${itemId}-${Date.now()}${ext}`);
+  },
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
 
 // ---------- Public: menu (only visible categories/items) ----------
 app.get('/api/menu', (req, res) => {
@@ -100,6 +123,63 @@ app.post('/api/admin/toggle', requireAdmin, (req, res) => {
     item.visible = visible;
   } else {
     category.visible = visible;
+  }
+
+  writeJson(MENU_FILE, menu);
+  res.json({ ok: true });
+});
+
+// ---------- Admin: upload/replace an item's photo ----------
+// The password check happens BEFORE multer processes the file, so a bad
+// password is rejected immediately without saving anything to disk.
+app.post('/api/admin/upload-image', requireAdmin, upload.single('image'), (req, res) => {
+  const { categoryName, itemId } = req.body;
+  if (!req.file) {
+    return res.status(400).json({ ok: false, error: 'No image file received' });
+  }
+
+  const menu = readJson(MENU_FILE);
+  const category = (menu.categories || []).find((c) => c.name === categoryName);
+  const item = category && (category.items || []).find((i) => i.id === itemId);
+
+  if (!item) {
+    fs.unlink(req.file.path, () => {}); // clean up the orphaned upload
+    return res.status(404).json({ ok: false, error: 'Item not found' });
+  }
+
+  // Delete the old uploaded photo, if there was one, to avoid piling up unused files.
+  if (item.image && item.image.startsWith('uploads/')) {
+    const oldPath = path.join(__dirname, 'public', item.image);
+    fs.unlink(oldPath, () => {}); // ignore errors (e.g. file already gone)
+  }
+
+  item.image = `uploads/${req.file.filename}`;
+  writeJson(MENU_FILE, menu);
+
+  res.json({ ok: true, image: item.image });
+});
+
+// ---------- Admin: delete a menu item entirely ----------
+app.post('/api/admin/delete-item', requireAdmin, (req, res) => {
+  const { categoryName, itemId } = req.body;
+  const menu = readJson(MENU_FILE);
+
+  const category = (menu.categories || []).find((c) => c.name === categoryName);
+  if (!category) {
+    return res.status(404).json({ ok: false, error: 'Category not found' });
+  }
+
+  const itemIndex = (category.items || []).findIndex((i) => i.id === itemId);
+  if (itemIndex === -1) {
+    return res.status(404).json({ ok: false, error: 'Item not found' });
+  }
+
+  const [removed] = category.items.splice(itemIndex, 1);
+
+  // Clean up its uploaded photo too, if it had one.
+  if (removed.image && removed.image.startsWith('uploads/')) {
+    const oldPath = path.join(__dirname, 'public', removed.image);
+    fs.unlink(oldPath, () => {});
   }
 
   writeJson(MENU_FILE, menu);
