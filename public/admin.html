@@ -31,9 +31,10 @@
   #loginBox button { width:100%; padding:12px; border-radius:10px; border:none; background:#FF6B35; color:#fff;
                       font-weight:bold; cursor:pointer; }
   .passwordWrap { position:relative; }
-  .passwordWrap input { padding-right:56px !important; }
-  .togglePw { position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none;
-              width:auto; padding:0; font-size:12px; font-weight:bold; color:#FF6B35; cursor:pointer; }
+  .passwordWrap input { padding-right:44px !important; }
+  #loginBox .togglePw { position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none;
+              width:24px; height:24px; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  #loginBox .togglePw svg { width:20px; height:20px; }
   .itemRow { display:flex; align-items:center; gap:10px; padding:10px 0 10px 16px; border-top:1px solid #F5F2EC; }
   .itemThumb { width:40px; height:40px; border-radius:8px; background:#F0EDE8; object-fit:cover; flex-shrink:0; }
   .itemName { flex:1; font-size:14px; }
@@ -48,7 +49,11 @@
   <h1>Admin Login</h1>
   <div class="passwordWrap">
     <input type="password" id="passwordInput" placeholder="Admin password">
-    <button type="button" class="togglePw" id="togglePwButton" onclick="togglePasswordVisibility()">Show</button>
+    <button type="button" class="togglePw" id="togglePwButton" onclick="togglePasswordVisibility()">
+      <svg id="eyeIcon" viewBox="0 0 24 24" fill="#9A9184">
+        <path d="M12,4.5C7,4.5 2.73,7.61 1,12c1.73,4.39 6,7.5 11,7.5s9.27,-3.11 11,-7.5c-1.73,-4.39 -6,-7.5 -11,-7.5zM12,17c-2.76,0 -5,-2.24 -5,-5s2.24,-5 5,-5 5,2.24 5,5 -2.24,5 -5,5zM12,9c-1.66,0 -3,1.34 -3,3s1.34,3 3,3 3,-1.34 3,-3 -1.34,-3 -3,-3z"/>
+      </svg>
+    </button>
   </div>
   <button onclick="login()">Log In</button>
   <p id="loginError" style="color:#E85A2A;font-size:13px;margin-top:8px;"></p>
