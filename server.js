@@ -186,6 +186,133 @@ app.post('/api/admin/delete-item', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Admin: add a new category, or rename an existing one ----------
+// If oldName is omitted, a new category is created. If provided, that category is renamed.
+app.post('/api/admin/save-category', requireAdmin, (req, res) => {
+  const { oldName, newName } = req.body;
+  const trimmedNewName = (newName || '').trim();
+
+  if (!trimmedNewName) {
+    return res.status(400).json({ ok: false, error: 'Category name cannot be empty' });
+  }
+
+  const menu = readJson(MENU_FILE);
+  menu.categories = menu.categories || [];
+
+  if (oldName) {
+    const category = menu.categories.find((c) => c.name === oldName);
+    if (!category) {
+      return res.status(404).json({ ok: false, error: 'Category not found' });
+    }
+    category.name = trimmedNewName;
+  } else {
+    if (menu.categories.some((c) => c.name === trimmedNewName)) {
+      return res.status(400).json({ ok: false, error: 'A category with that name already exists' });
+    }
+    menu.categories.push({ name: trimmedNewName, visible: true, items: [] });
+  }
+
+  writeJson(MENU_FILE, menu);
+  res.json({ ok: true });
+});
+
+// ---------- Admin: delete an entire category (and everything in it) ----------
+app.post('/api/admin/delete-category', requireAdmin, (req, res) => {
+  const { categoryName } = req.body;
+  const menu = readJson(MENU_FILE);
+
+  const index = (menu.categories || []).findIndex((c) => c.name === categoryName);
+  if (index === -1) {
+    return res.status(404).json({ ok: false, error: 'Category not found' });
+  }
+
+  const [removed] = menu.categories.splice(index, 1);
+
+  // Clean up any uploaded photos belonging to items in this category.
+  (removed.items || []).forEach((item) => {
+    if (item.image && item.image.startsWith('uploads/')) {
+      fs.unlink(path.join(__dirname, 'public', item.image), () => {});
+    }
+  });
+
+  writeJson(MENU_FILE, menu);
+  res.json({ ok: true });
+});
+
+// ---------- Admin: add a new item, or edit an existing one ----------
+// If itemId is omitted, a new item is created. If provided, that item's fields are updated.
+// optionGroup is optional — pass null/omit to leave an item with no size/customization choices.
+app.post('/api/admin/save-item', requireAdmin, (req, res) => {
+  const { categoryName, itemId, name, description, price, optionGroup } = req.body;
+  const trimmedName = (name || '').trim();
+
+  if (!trimmedName) {
+    return res.status(400).json({ ok: false, error: 'Item name cannot be empty' });
+  }
+  const parsedPrice = Number(price);
+  if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+    return res.status(400).json({ ok: false, error: 'Please enter a valid price' });
+  }
+
+  const menu = readJson(MENU_FILE);
+  const category = (menu.categories || []).find((c) => c.name === categoryName);
+  if (!category) {
+    return res.status(404).json({ ok: false, error: 'Category not found' });
+  }
+  category.items = category.items || [];
+
+  if (itemId) {
+    const item = category.items.find((i) => i.id === itemId);
+    if (!item) {
+      return res.status(404).json({ ok: false, error: 'Item not found' });
+    }
+    item.name = trimmedName;
+    item.description = description || '';
+    item.price = parsedPrice;
+    if (optionGroup) {
+      item.options = optionGroup;
+    } else {
+      delete item.options;
+    }
+  } else {
+    const newId = trimmedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `item-${Date.now()}`;
+    const newItem = {
+      id: newId,
+      name: trimmedName,
+      description: description || '',
+      price: parsedPrice,
+      image: '',
+      visible: true,
+    };
+    if (optionGroup) newItem.options = optionGroup;
+    category.items.push(newItem);
+  }
+
+  writeJson(MENU_FILE, menu);
+  res.json({ ok: true });
+});
+
+// ---------- Admin: update restaurant name, offers banner, and coupon codes ----------
+app.post('/api/admin/update-store-settings', requireAdmin, (req, res) => {
+  const { restaurantName, offers, coupons } = req.body;
+  const menu = readJson(MENU_FILE);
+
+  if (typeof restaurantName === 'string' && restaurantName.trim()) {
+    menu.restaurantName = restaurantName.trim();
+  }
+  if (Array.isArray(offers)) {
+    menu.offers = offers.filter((o) => typeof o === 'string' && o.trim()).map((o) => o.trim());
+  }
+  if (Array.isArray(coupons)) {
+    menu.coupons = coupons
+      .filter((c) => c && c.code && c.code.trim())
+      .map((c) => ({ code: c.code.trim(), discountPercent: Number(c.discountPercent) || 0 }));
+  }
+
+  writeJson(MENU_FILE, menu);
+  res.json({ ok: true });
+});
+
 // ---------- Admin: view received orders ----------
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const orders = readJson(ORDERS_FILE);
