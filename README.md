@@ -13,20 +13,33 @@ internet traffic).
 - **Public ordering website** (`/`) — customers browse the menu, customize
   items (sizes, etc.), add to cart, apply coupons, and check out (pickup,
   dine-in, or delivery), landing on an order confirmation screen.
-- **Admin page** (`/admin.html`) — password-protected. Toggle any category or
-  individual item on/off to control what customers see, and view all orders
-  that have come in.
-- **Backend API** (Express/Node.js) serving both, storing menu + orders data.
+- **Admin page** (`/admin.html`) — password-protected. Add/rename/delete
+  categories, add/edit/delete menu items (including size/customization
+  options), upload photos, toggle visibility, edit the restaurant name/offers/
+  coupons, and view all orders that have come in.
+- **Backend API** (Express/Node.js) serving both, storing menu + orders data
+  permanently in **MongoDB Atlas** (a free cloud database).
 
 ## Running it locally (to test before deploying)
 
-You'll need [Node.js](https://nodejs.org) installed (version 18 or newer).
+You'll need [Node.js](https://nodejs.org) installed (version 18 or newer),
+and a MongoDB Atlas connection string (see "Setting up MongoDB" below if you
+don't have one yet).
 
 ```bash
 cd NelasKitchenetteOnline
 npm install
+```
+
+Before running it, set two environment variables. On Windows PowerShell:
+
+```powershell
+$env:MONGODB_URI="your connection string here"
+$env:ADMIN_PASSWORD="choose a real password"
 npm start
 ```
+
+(On Mac/Linux, use `export MONGODB_URI="..."` instead of `$env:...=`.)
 
 Then open **http://localhost:4000** in a browser for the customer site, and
 **http://localhost:4000/admin.html** for the admin page.
@@ -34,8 +47,23 @@ Then open **http://localhost:4000** in a browser for the customer site, and
 (This runs on port 4000 by default — chosen specifically so it doesn't clash
 with XAMPP/Apache, which commonly runs on port 3000 or 80.)
 
-The default admin password is **`changeme123`** — change this before going
-live (see below).
+## Setting up MongoDB (one-time, free)
+
+1. Create a free account at **mongodb.com/cloud/atlas**
+2. Create a free "Free" tier cluster (no cost, never expires)
+3. Under **Database Access**, create a database user (username + password)
+4. Under **Network Access**, add `0.0.0.0/0` ("Allow Access from Anywhere") —
+   needed since Render's servers don't have a fixed IP address
+5. Click **Connect → Drivers → Node.js**, copy the connection string, and
+   replace `<password>` in it with your actual database user's password
+
+That connection string is what goes into `MONGODB_URI` below. **Never commit
+it directly into code you share or push to GitHub** — it belongs in
+environment variables only, both locally and on your hosting provider.
+
+The first time the server ever connects to a brand-new, empty database, it
+automatically seeds it with the starter menu from `data/menu.json` — after
+that, all edits live in MongoDB, not in that file.
 
 ## Deploying it to the real internet
 
@@ -54,32 +82,26 @@ a live deployment step on your end. Here's a straightforward option:
    - **Start Command**: `npm start`
 5. Under **Environment Variables**, add:
    - `ADMIN_PASSWORD` = (choose a real password — don't use the default)
+   - `MONGODB_URI` = (your full MongoDB Atlas connection string, with the real password in it)
 6. Click **Deploy**. Render will give you a public URL like
    `https://nelas-kitchenette.onrender.com` — that's your real, internet-facing
    ordering site.
 
 Other viable options: **Railway.app**, **Fly.io**, or a small VPS (e.g.
 DigitalOcean) if you want more control. The steps are similar — install
-Node.js dependencies, run `npm start`, set the `ADMIN_PASSWORD` environment
-variable.
+Node.js dependencies, run `npm start`, set both environment variables above.
 
-## ⚠️ Important limitation — please read before relying on this for real orders
+## ⚠️ One limitation still remaining: uploaded photos
 
-This version stores the menu and orders in **plain JSON files** on disk
-(`data/menu.json`, `data/orders.json`). This is simple and works great for
-testing, but **most free hosting tiers (including Render's free plan) use a
-temporary/ephemeral filesystem** — meaning any orders placed, or any
-visibility changes made in the admin page, **can be wiped out** whenever the
-server restarts (which free tiers do automatically after periods of
-inactivity, or on redeploys).
+Menu data and orders now persist permanently in MongoDB — that part is fully
+solved. **Uploaded photo files, however, still live on Render's disk**, which
+resets on restart, exactly like the old JSON-file limitation. So category/item
+edits, coupons, offers, and orders are now safe permanently — but a photo you
+upload today could still disappear after a server restart.
 
-**For actually taking real customer orders long-term, this needs an upgrade
-to a real database** (e.g. a free-tier PostgreSQL or MongoDB instance, which
-most hosts also offer) instead of flat JSON files. This is a very doable next
-step — just let me know when you're ready to go properly live, and I'll wire
-that in. For now, this version is solid for **testing the full flow and
-showing it to people**, just don't treat the orders it collects as
-permanently safe until that upgrade is made.
+**The fix for this is cloud photo storage** (e.g. Cloudinary, which has a free
+tier built for exactly this). This is a smaller, separate follow-up — let me
+know when you're ready and I'll wire it in.
 
 ## How the admin page works
 

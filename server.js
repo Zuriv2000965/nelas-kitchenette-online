@@ -2,28 +2,58 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const { MongoClient } = require('mongodb');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MENU_FILE = path.join(__dirname, 'data', 'menu.json');
-const ORDERS_FILE = path.join(__dirname, 'data', 'orders.json');
+const SEED_MENU_FILE = path.join(__dirname, 'data', 'menu.json'); // used only to seed a brand-new database
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 
-// Make sure the uploads folder exists (won't error if it already does).
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-// Set this in your hosting provider's environment variables — never hardcode
-// the real password in code you might share or commit publicly.
+// Set these in your hosting provider's environment variables — never hardcode
+// real credentials in code you might share or commit publicly.
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme123';
+const MONGODB_URI = process.env.MONGODB_URI;
 
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+if (!MONGODB_URI) {
+  console.error('MONGODB_URI environment variable is not set. The server cannot start without it.');
+  process.exit(1);
 }
 
-function writeJson(filePath, data) {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+let menuCollection;
+let ordersCollection;
+const MENU_DOC_ID = 'main'; // the whole menu is stored as a single document with this fixed id
+
+async function connectToDatabase() {
+  const client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  const db = client.db('nelas_kitchenette');
+  menuCollection = db.collection('menu');
+  ordersCollection = db.collection('orders');
+
+  // Seed the database with the starter menu the very first time it's ever run,
+  // so the site isn't empty on a brand-new database.
+  const existing = await menuCollection.findOne({ _id: MENU_DOC_ID });
+  if (!existing) {
+    const seedData = JSON.parse(fs.readFileSync(SEED_MENU_FILE, 'utf8'));
+    await menuCollection.insertOne({ _id: MENU_DOC_ID, ...seedData });
+    console.log('Seeded a brand-new database with the starter menu.');
+  }
+
+  console.log('Connected to MongoDB.');
+}
+
+async function getMenu() {
+  const doc = await menuCollection.findOne({ _id: MENU_DOC_ID });
+  return doc;
+}
+
+async function saveMenu(menu) {
+  const { _id, ...rest } = menu;
+  await menuCollection.replaceOne({ _id: MENU_DOC_ID }, { _id: MENU_DOC_ID, ...rest });
 }
 
 function requireAdmin(req, res, next) {
@@ -51,10 +81,13 @@ const upload = multer({
     else cb(new Error('Only image files are allowed'));
   },
 });
+// NOTE: uploaded photo FILES still live on Render's disk, which resets on restart —
+// only the menu/orders DATA is now permanently stored in MongoDB. See README for
+// the follow-up needed (e.g. Cloudinary) to make photos permanent too.
 
 // ---------- Public: menu (only visible categories/items) ----------
-app.get('/api/menu', (req, res) => {
-  const menu = readJson(MENU_FILE);
+app.get('/api/menu', async (req, res) => {
+  const menu = await getMenu();
   const filtered = {
     restaurantName: menu.restaurantName,
     offers: menu.offers || [],
@@ -71,7 +104,7 @@ app.get('/api/menu', (req, res) => {
 });
 
 // ---------- Public: place an order ----------
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', async (req, res) => {
   const { items, customerName, phone, address, fulfillment, total } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -81,7 +114,6 @@ app.post('/api/orders', (req, res) => {
     return res.status(400).json({ ok: false, error: 'Name and phone are required' });
   }
 
-  const orders = readJson(ORDERS_FILE);
   const orderNumber = Math.floor(1000 + Math.random() * 9000);
   const order = {
     orderNumber,
@@ -94,21 +126,20 @@ app.post('/api/orders', (req, res) => {
     status: 'received',
     createdAt: new Date().toISOString(),
   };
-  orders.push(order);
-  writeJson(ORDERS_FILE, orders);
+  await ordersCollection.insertOne(order);
 
   res.json({ ok: true, orderNumber });
 });
 
 // ---------- Admin: full menu (including hidden items) ----------
-app.get('/api/admin/menu', requireAdmin, (req, res) => {
-  res.json(readJson(MENU_FILE));
+app.get('/api/admin/menu', requireAdmin, async (req, res) => {
+  res.json(await getMenu());
 });
 
 // ---------- Admin: toggle a category's or item's visibility ----------
-app.post('/api/admin/toggle', requireAdmin, (req, res) => {
+app.post('/api/admin/toggle', requireAdmin, async (req, res) => {
   const { categoryName, itemId, visible } = req.body;
-  const menu = readJson(MENU_FILE);
+  const menu = await getMenu();
 
   const category = (menu.categories || []).find((c) => c.name === categoryName);
   if (!category) {
@@ -125,44 +156,41 @@ app.post('/api/admin/toggle', requireAdmin, (req, res) => {
     category.visible = visible;
   }
 
-  writeJson(MENU_FILE, menu);
+  await saveMenu(menu);
   res.json({ ok: true });
 });
 
 // ---------- Admin: upload/replace an item's photo ----------
-// The password check happens BEFORE multer processes the file, so a bad
-// password is rejected immediately without saving anything to disk.
-app.post('/api/admin/upload-image', requireAdmin, upload.single('image'), (req, res) => {
+app.post('/api/admin/upload-image', requireAdmin, upload.single('image'), async (req, res) => {
   const { categoryName, itemId } = req.body;
   if (!req.file) {
     return res.status(400).json({ ok: false, error: 'No image file received' });
   }
 
-  const menu = readJson(MENU_FILE);
+  const menu = await getMenu();
   const category = (menu.categories || []).find((c) => c.name === categoryName);
   const item = category && (category.items || []).find((i) => i.id === itemId);
 
   if (!item) {
-    fs.unlink(req.file.path, () => {}); // clean up the orphaned upload
+    fs.unlink(req.file.path, () => {});
     return res.status(404).json({ ok: false, error: 'Item not found' });
   }
 
-  // Delete the old uploaded photo, if there was one, to avoid piling up unused files.
   if (item.image && item.image.startsWith('uploads/')) {
     const oldPath = path.join(__dirname, 'public', item.image);
-    fs.unlink(oldPath, () => {}); // ignore errors (e.g. file already gone)
+    fs.unlink(oldPath, () => {});
   }
 
   item.image = `uploads/${req.file.filename}`;
-  writeJson(MENU_FILE, menu);
+  await saveMenu(menu);
 
   res.json({ ok: true, image: item.image });
 });
 
 // ---------- Admin: delete a menu item entirely ----------
-app.post('/api/admin/delete-item', requireAdmin, (req, res) => {
+app.post('/api/admin/delete-item', requireAdmin, async (req, res) => {
   const { categoryName, itemId } = req.body;
-  const menu = readJson(MENU_FILE);
+  const menu = await getMenu();
 
   const category = (menu.categories || []).find((c) => c.name === categoryName);
   if (!category) {
@@ -176,19 +204,16 @@ app.post('/api/admin/delete-item', requireAdmin, (req, res) => {
 
   const [removed] = category.items.splice(itemIndex, 1);
 
-  // Clean up its uploaded photo too, if it had one.
   if (removed.image && removed.image.startsWith('uploads/')) {
-    const oldPath = path.join(__dirname, 'public', removed.image);
-    fs.unlink(oldPath, () => {});
+    fs.unlink(path.join(__dirname, 'public', removed.image), () => {});
   }
 
-  writeJson(MENU_FILE, menu);
+  await saveMenu(menu);
   res.json({ ok: true });
 });
 
 // ---------- Admin: add a new category, or rename an existing one ----------
-// If oldName is omitted, a new category is created. If provided, that category is renamed.
-app.post('/api/admin/save-category', requireAdmin, (req, res) => {
+app.post('/api/admin/save-category', requireAdmin, async (req, res) => {
   const { oldName, newName } = req.body;
   const trimmedNewName = (newName || '').trim();
 
@@ -196,7 +221,7 @@ app.post('/api/admin/save-category', requireAdmin, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Category name cannot be empty' });
   }
 
-  const menu = readJson(MENU_FILE);
+  const menu = await getMenu();
   menu.categories = menu.categories || [];
 
   if (oldName) {
@@ -212,14 +237,14 @@ app.post('/api/admin/save-category', requireAdmin, (req, res) => {
     menu.categories.push({ name: trimmedNewName, visible: true, items: [] });
   }
 
-  writeJson(MENU_FILE, menu);
+  await saveMenu(menu);
   res.json({ ok: true });
 });
 
 // ---------- Admin: delete an entire category (and everything in it) ----------
-app.post('/api/admin/delete-category', requireAdmin, (req, res) => {
+app.post('/api/admin/delete-category', requireAdmin, async (req, res) => {
   const { categoryName } = req.body;
-  const menu = readJson(MENU_FILE);
+  const menu = await getMenu();
 
   const index = (menu.categories || []).findIndex((c) => c.name === categoryName);
   if (index === -1) {
@@ -228,21 +253,18 @@ app.post('/api/admin/delete-category', requireAdmin, (req, res) => {
 
   const [removed] = menu.categories.splice(index, 1);
 
-  // Clean up any uploaded photos belonging to items in this category.
   (removed.items || []).forEach((item) => {
     if (item.image && item.image.startsWith('uploads/')) {
       fs.unlink(path.join(__dirname, 'public', item.image), () => {});
     }
   });
 
-  writeJson(MENU_FILE, menu);
+  await saveMenu(menu);
   res.json({ ok: true });
 });
 
 // ---------- Admin: add a new item, or edit an existing one ----------
-// If itemId is omitted, a new item is created. If provided, that item's fields are updated.
-// optionGroup is optional — pass null/omit to leave an item with no size/customization choices.
-app.post('/api/admin/save-item', requireAdmin, (req, res) => {
+app.post('/api/admin/save-item', requireAdmin, async (req, res) => {
   const { categoryName, itemId, name, description, price, optionGroup } = req.body;
   const trimmedName = (name || '').trim();
 
@@ -254,7 +276,7 @@ app.post('/api/admin/save-item', requireAdmin, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Please enter a valid price' });
   }
 
-  const menu = readJson(MENU_FILE);
+  const menu = await getMenu();
   const category = (menu.categories || []).find((c) => c.name === categoryName);
   if (!category) {
     return res.status(404).json({ ok: false, error: 'Category not found' });
@@ -288,14 +310,14 @@ app.post('/api/admin/save-item', requireAdmin, (req, res) => {
     category.items.push(newItem);
   }
 
-  writeJson(MENU_FILE, menu);
+  await saveMenu(menu);
   res.json({ ok: true });
 });
 
 // ---------- Admin: update restaurant name, offers banner, and coupon codes ----------
-app.post('/api/admin/update-store-settings', requireAdmin, (req, res) => {
+app.post('/api/admin/update-store-settings', requireAdmin, async (req, res) => {
   const { restaurantName, offers, coupons } = req.body;
-  const menu = readJson(MENU_FILE);
+  const menu = await getMenu();
 
   if (typeof restaurantName === 'string' && restaurantName.trim()) {
     menu.restaurantName = restaurantName.trim();
@@ -309,17 +331,25 @@ app.post('/api/admin/update-store-settings', requireAdmin, (req, res) => {
       .map((c) => ({ code: c.code.trim(), discountPercent: Number(c.discountPercent) || 0 }));
   }
 
-  writeJson(MENU_FILE, menu);
+  await saveMenu(menu);
   res.json({ ok: true });
 });
 
 // ---------- Admin: view received orders ----------
-app.get('/api/admin/orders', requireAdmin, (req, res) => {
-  const orders = readJson(ORDERS_FILE);
-  res.json(orders.slice().reverse()); // newest first
+app.get('/api/admin/orders', requireAdmin, async (req, res) => {
+  const orders = await ordersCollection.find({}).sort({ createdAt: -1 }).toArray();
+  res.json(orders);
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`Nela's Kitchenette online server running on port ${PORT}`);
-});
+
+connectToDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Nela's Kitchenette online server running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to connect to MongoDB:', err.message);
+    process.exit(1);
+  });
